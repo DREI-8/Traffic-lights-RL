@@ -1,9 +1,8 @@
 import xml.etree.ElementTree as ET
 import traci
 import numpy as np
-from gymnasium.spaces import Box
 
-class env():
+class SumoEnv():
     def __init__(self, sim_name, sim_duration=1000, vehicle_prob=0.15, pedestrian_prob=0.05, np_random=None):
         """
         Initialize the environment.
@@ -19,12 +18,10 @@ class env():
         self.MIN_SWITCH = 5 # Minimum duration of a phase (green / red) before switching (in steps). Must be superior to the yellow phase duration.
         self.MIN_GAP = 2 # Minimum gap between vehicles (in meters)
         self.YEL_DURATION = 3 # Duration of the yellow phase (in steps)
-        
+
         self.sim_duration = sim_duration
         self.vehicle_prob = vehicle_prob
         self.pedestrian_prob = pedestrian_prob
-        self.yel_step = -1 # Current step of the yellow phase, used to count the duration of the yellow phase, -1 if the yellow phase is not active
-        "TODO: transorm yel_step into a list for having more than one traffic light"
 
         if np_random is not None:
             self.np_random = np_random
@@ -54,6 +51,7 @@ class env():
 
         self.current_step = 0
         self.phase_duration = np.zeros(traci.trafficlight.getIDCount()) # Duration of the current phase (green / red) for each traffic light
+        self.yel_step = [-1] * traci.trafficlight.getIDCount() # Current step of the yellow phase, used to count the duration of the yellow phase, -1 if the yellow phase is not active
 
         self.generate_vehicles()
         self.generate_pedestrians()
@@ -143,30 +141,30 @@ class env():
             action_space = np.zeros(len(traffic_light_ids))
 
             return action_space 
-        
+    
     def get_observation_space(self):
         """
-        Returns the observation space of the environment.
+        As the observation space is a concatenation of multiple elements, this method returns the shape of each element in the observation space.
+        It is aimed at helping with debugging and understanding the observation space.
 
-        See the `get_observation` method for more details on the observation vector.
-        
         Returns:
-            gym.spaces.Box: The observation space of the environment.
+            dict: A dictionary containing the shape of each element in the observation space.
         """
+        
         traffic_light_ids = traci.trafficlight.getIDList()
         
         num_phases = len(traci.trafficlight.getAllProgramLogics(traffic_light_ids[0])[0].phases)
         num_links = len(traci.trafficlight.getControlledLinks(traffic_light_ids[0]))
 
-        observation_space = Box(
-            low=0,
-            high=1,
-            shape=(len(traffic_light_ids), num_phases + 1 + 2 * num_links),
-            dtype=np.float32
-        )
+        observation_space_infos = {
+            "phase_one_hot": (num_phases,),
+            "min_green": (1,),
+            "lane_densities": (num_links,),
+            "lane_queues": (num_links,),
+            "total_shape": (num_phases + 1 + 2 * num_links,)
+        }
 
-        return observation_space
-    
+        return observation_space_infos
 
     def step(self, action):
         """
@@ -190,11 +188,11 @@ class env():
                 next_phase = (current_phase + 1) % num_phases
                 traci.trafficlight.setPhase(tl_id, next_phase)
                 self.phase_duration[i] = 0
-                self.yel_step = 0
+                self.yel_step[i] = 0
             else:
-                if self.yel_step < self.YEL_DURATION:
-                    if self.yel_step != -1:
-                        self.yel_step += 1
+                if self.yel_step[i] < self.YEL_DURATION:
+                    if self.yel_step[i] != -1:
+                        self.yel_step[i] += 1
                     self.phase_duration[i] += 1
                 else:
                     current_phase = traci.trafficlight.getPhase(tl_id)
@@ -202,7 +200,7 @@ class env():
                     next_phase = (current_phase + 1) % num_phases
                     traci.trafficlight.setPhase(tl_id, next_phase)
                     self.phase_duration[i] = 0
-                    self.yel_step = -1
+                    self.yel_step[i] = -1
 
         traci.simulationStep()
         self.current_step += 1
