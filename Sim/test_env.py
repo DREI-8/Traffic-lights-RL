@@ -1,13 +1,16 @@
 import os
 import numpy as np
 import pytest
-from env import SumoEnv
+from Sim import SumoEnv
 
 # Number of steps taken to verify that lane densities and queues are increasing, adjust depending on the simulation apparition probabilities
 NUM_STEPS_TO_TEST_DENS = 10
 
+# Making sure the test file works in both the root and Sim directory
+data_dir = './data' if os.path.exists('./data') else './Sim/data'
+
 # This test file tests the SumoEnv environment for each environment folder in the data directory
-environments = [d for d in os.listdir('./data') if os.path.isdir(os.path.join('./data', d))]
+environments = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
 
 @pytest.mark.parametrize("env_path", environments)
 def test_sumo_env(env_path):
@@ -19,19 +22,29 @@ def test_sumo_env(env_path):
     assert isinstance(observation, np.ndarray), "reset() should return a numpy ndarray"
     
     observation_space = env.get_observation_space()
-    phase_one_hot_shape = observation_space["phase_one_hot"]
+    total_shape = observation_space["total_shape"]
+    
+    assert observation.shape == total_shape, "The shape of the observation should match the total shape of the observation space"
 
-    phase_one_hot = observation[:phase_one_hot_shape[0]]
-    assert sum(phase_one_hot) == 1, "There should be exactly one '1' in phase_one_hot and the rest '0'"
+    assert isinstance(observation_space, dict), "get_observation_space() should return a dictionary"
+    assert "infos_per_TL" in observation_space, "'infos_per_TL' should be a key in the observation space"
+    assert "total_shape" in observation_space, "'total_shape' should be a key in the observation space"
 
     action_space = env.get_action_space()
     assert isinstance(action_space, np.ndarray), "get_action_space() should return a numpy ndarray"
-
-    assert isinstance(observation_space, dict), "get_observation_space() should return a dictionary"
     
-    total_shape = observation_space["total_shape"]
-    assert observation.shape == total_shape, "The shape of the observation should match the total shape of the observation space"
+    # Iterate over each traffic light and check the observation structure
+    for i, tl_info in enumerate(observation_space["infos_per_TL"]):
+        phase_one_hot_indices = tl_info["phase_one_hot"]
+        min_green_indices = tl_info["min_green"]
 
+        phase_one_hot = observation[phase_one_hot_indices[0]:phase_one_hot_indices[1]]
+        assert sum(phase_one_hot) == 1, f"There should be exactly one '1' in phase_one_hot for TL {i} and the rest '0'"
+
+        min_green_value = observation[min_green_indices[0]:min_green_indices[1]]
+        assert min_green_value == 0, f"min_green should be 0 for TL {i} after reset"
+
+    # Perform one step in the environment and verify the structure again
     new_observation, reward, done, info = env.step(np.zeros_like(action_space))
     assert isinstance(new_observation, np.ndarray), "step() should return a numpy ndarray as the observation"
     assert isinstance(reward, float), "step() should return a float as the reward"
@@ -39,35 +52,48 @@ def test_sumo_env(env_path):
     assert isinstance(info, dict), "step() should return a dictionary as 'info'"
     assert new_observation.shape == total_shape, "The shape of the observation after step should match the observation space"
 
-    min_green_idx = phase_one_hot_shape[0]
-    assert new_observation[min_green_idx] == 0, "min_green should be 0 after reset"
+    for i, tl_info in enumerate(observation_space["infos_per_TL"]):
+        min_green_value = new_observation[tl_info["min_green"][0]:tl_info["min_green"][1]]
+        assert min_green_value == 0, f"min_green should be 0 for TL {i} after one step"
 
+    # Reset the environment and simulate until MIN_SWITCH is reached to check min_green switching
     env.reset()
 
     for _ in range(env.MIN_SWITCH):
         observation, reward, done, info = env.step(np.zeros_like(action_space))
 
-    assert observation[min_green_idx] == 1, "min_green should have switched to 1 after MIN_SWITCH steps"
+    for i, tl_info in enumerate(observation_space["infos_per_TL"]):
+        min_green_value = observation[tl_info["min_green"][0]:tl_info["min_green"][1]]
+        assert min_green_value == 1, f"min_green should switch to 1 for TL {i} after MIN_SWITCH steps"
 
-    lane_densities_start = min_green_idx + 1
-    lane_queues_start = lane_densities_start + len(observation_space["lane_densities"])
-    
-    previous_density = np.mean(observation[lane_densities_start:lane_queues_start])
-    previous_queue = np.mean(observation[lane_queues_start:])
-    
-    for _ in range(NUM_STEPS_TO_TEST_DENS):
-        observation, reward, done, info = env.step(np.zeros_like(action_space))
+    # Test lane density and queue increasing over time
+    for i, tl_info in enumerate(observation_space["infos_per_TL"]):
+        lane_densities_start = tl_info["lane_densities"][0]
+        lane_densities_end = tl_info["lane_densities"][1]
+        lane_queues_start = tl_info["lane_queues"][0]
+        lane_queues_end = tl_info["lane_queues"][1]
 
-    new_density = np.mean(observation[lane_densities_start:lane_queues_start])
-    new_queue = np.mean(observation[lane_queues_start:])
-    
-    assert new_density > previous_density, "Lane densities should increase over time (you can increase the number of steps if this fails, at the top of the test file)"
-    assert new_queue > previous_queue, "Lane queues should increase over time, (you can increase the number of steps if this fails, at the top of the test file)"
+        previous_density = np.mean(observation[lane_densities_start:lane_densities_end])
+        previous_queue = np.mean(observation[lane_queues_start:lane_queues_end])
+
+        for _ in range(NUM_STEPS_TO_TEST_DENS):
+            observation, reward, done, info = env.step(np.zeros_like(action_space))
+
+        new_density = np.mean(observation[lane_densities_start:lane_densities_end])
+        new_queue = np.mean(observation[lane_queues_start:lane_queues_end])
+
+        assert new_density > previous_density, f"Lane densities should increase over time for TL {i} (adjust NUM_STEPS_TO_TEST_DENS if this fails)"
+        assert new_queue > previous_queue, f"Lane queues should increase over time for TL {i} (adjust NUM_STEPS_TO_TEST_DENS if this fails)"
 
     observation, reward, done, info = env.step(np.ones_like(action_space))
 
-    assert observation[min_green_idx] == 0, "min_green should be 0 after action 1"
-    assert observation[0] == 0 and observation[1] == 1, "phase_one_hot should change from first bit to second after action 1"
+    for i, tl_info in enumerate(observation_space["infos_per_TL"]):
+        min_green_value = observation[tl_info["min_green"][0]:tl_info["min_green"][1]]
+        assert min_green_value == 0, f"min_green should be 0 for TL {i} after action 1"
+        
+        # Check if phase_one_hot changes correctly (first bit to second bit after changing phase)
+        phase_one_hot = observation[tl_info["phase_one_hot"][0]:tl_info["phase_one_hot"][1]]
+        assert phase_one_hot[0] == 0 and phase_one_hot[1] == 1, f"phase_one_hot should change correctly for TL {i} after action 1"
 
     env.reset()
     steps_taken = 0
