@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 class SumoEnv():
-    def __init__(self, sim_name, sim_duration=1000, vehicle_prob=0.15, pedestrian_prob=0.5, prob_variation=0.05, seed=None, use_seed_every_episode=True):
+    def __init__(self, sim_name, sim_duration=500, vehicle_prob=0.05, pedestrian_prob=0.05, prob_variation=0.15, seed=None, use_seed_every_episode=True):
         """
         Initialize the environment.
 
@@ -15,14 +15,14 @@ class SumoEnv():
             The name of the simulation. All related simulation files (.net.xml, .rou.xml, and .sumocfg) 
             should be placed in a subfolder with this name inside the "data" directory.
         sim_duration : int, optional
-            The duration of the simulation in number of steps (default: 1000).
+            The duration of the simulation in number of steps (default: 500).
         vehicle_prob : float, optional
-            The probability of vehicle appearance at each step (default: 0.15).
+            The probability of vehicle appearance at each step (default: 0.05).
         pedestrian_prob : float, optional
             The probability of pedestrian appearance at each step (default: 0.05).
         prob_variation : float, optional
             The relative variation range for the probability of appearance for each lane. A value of 1 means that vehicle_prob and pedestrian_prob
-            can vary between 0 and 2 times their initial value (default: 0.5).
+            can vary between 0 and 2 times their initial value (default: 0.15).
         seed : int, optional
             A seed for the random number generator for reproducibility (default: None).
         use_seed_every_episode : bool, optional

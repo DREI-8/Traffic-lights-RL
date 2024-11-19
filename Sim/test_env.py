@@ -4,7 +4,7 @@ import pytest
 from Sim import SumoEnv
 
 # Number of steps taken to verify that lane densities and queues are increasing, adjust depending on the simulation apparition probabilities
-NUM_STEPS_TO_TEST_DENS = 10
+NUM_STEPS_TO_TEST_DENS = 25
 
 # Making sure the test file works in both the root and Sim directory
 data_dir = './data' if os.path.exists('./data') else './Sim/data'
@@ -16,7 +16,7 @@ environments = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(da
 def test_sumo_env(env_path):
     """Test the SumoEnv environment for each environment folder"""
     
-    env = SumoEnv(env_path)
+    env = SumoEnv(env_path, 250, 0.3, 0.1, 0)
 
     observation = env.reset()
     assert isinstance(observation, np.ndarray), "reset() should return a numpy ndarray"
